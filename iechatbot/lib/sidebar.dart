@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:iechatbot/chat_page.dart';
+import 'chat_page.dart';
 
 class Sidebar extends StatefulWidget {
   final String token;
@@ -13,8 +13,8 @@ class Sidebar extends StatefulWidget {
 }
 
 class _SidebarState extends State<Sidebar> {
-  bool _isLoading = false;
   List<Map<String, dynamic>> _chatHistory = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -24,80 +24,88 @@ class _SidebarState extends State<Sidebar> {
 
   // Fetch chat history from the backend
   Future<void> _fetchChatHistory() async {
-    final url = Uri.parse('http://127.0.0.1:8000/history?token=${widget.token}');
+    final url = Uri.parse('http://127.0.0.1:8000/history');
     try {
-      setState(() {
-        _isLoading = true;
-      });
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      );
 
-      final response = await http.get(url);
       if (response.statusCode == 200) {
-        final List<dynamic> historyData = json.decode(response.body);
         setState(() {
-          _chatHistory = historyData.map((message) {
-            return {
-              'query': message['query'] ?? '',
-              'response': message['response'] ?? '',
-            };
-          }).toList();
+          _chatHistory = List<Map<String, dynamic>>.from(json.decode(response.body));
+          _isLoading = false;
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load chat history')),
-        );
+        throw Exception('Failed to load chat history');
       }
-    } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $error')),
-      );
-    } finally {
+    } catch (e) {
+      debugPrint('Error fetching chat history: $e');
       setState(() {
         _isLoading = false;
       });
     }
   }
 
-  // Truncate the query text if it is too long
-  String _truncateText(String text, int maxLength) {
-    if (text.length > maxLength) {
-      return text.substring(0, maxLength) + '...';
+  // Fetch session messages for a specific session
+  Future<List<Map<String, dynamic>>> _fetchSessionMessages(String sessionId) async {
+    final url = Uri.parse('http://127.0.0.1:8000/session/$sessionId');
+    try {
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes)); // Decode properly
+        final messages = List<Map<String, dynamic>>.from(data['messages']);
+        return messages;
+      } else {
+        debugPrint('Failed to load session messages for $sessionId: ${response.body}');
+        throw Exception('Failed to load session messages');
+      }
+    } catch (e) {
+      debugPrint('Error fetching session messages: $e');
+      return [];
     }
-    return text;
   }
 
-  // Build the sidebar content for chat history
-  Widget _buildSidebar() {
-    return _isLoading
-        ? Center(child: CircularProgressIndicator())
-        : ListView.builder(
-            itemCount: _chatHistory.length,
-            itemBuilder: (context, index) {
-              final chat = _chatHistory[index];
-              return ListTile(
-                title: Text(
-                  'Conversation ${index + 1}: ${_truncateText(chat['query']!, 30)}',
-                ),
-                subtitle: Text(_truncateText(chat['response']!, 50)),
-                onTap: () {
-                  // Pass the full conversation to the ChatPage when tapped
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ChatPage(
-                        token: widget.token,
-                        initialChatMessages: [
-                          {
-                            'user_message': chat['query'],
-                            'bot_response': chat['response']
-                          }
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          );
+  // Create a new session and navigate to a new ChatPage
+  Future<void> _startNewConversation() async {
+    final url = Uri.parse('http://127.0.0.1:8000/start_new_session');
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'token': widget.token}),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        final newSessionId = responseData['session_id'];
+
+        // Navigate to a new ChatPage with the new session
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatPage(
+              token: widget.token,
+              sessionId: newSessionId,
+              initialChatMessages: [], // New conversation starts empty
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start a new conversation.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error starting new session: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: Unable to start a new conversation.')),
+      );
+    }
   }
 
   @override
@@ -105,41 +113,50 @@ class _SidebarState extends State<Sidebar> {
     return Drawer(
       child: Column(
         children: [
-          // Sidebar title
-          Padding(
-            padding: const EdgeInsets.all(16.0),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
             child: Text(
               'Chat History',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
-          // Conversation list
-          Expanded(child: _buildSidebar()),
-          // New Conversation Button
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+              itemCount: _chatHistory.length,
+              itemBuilder: (context, index) {
+                final session = _chatHistory[index];
+                final sessionId = session['session_id'];
+                final firstMessage = session['messages'].isNotEmpty
+                    ? session['messages'][0]['query']
+                    : 'No messages';
+
+                return ListTile(
+                  title: Text('Session $sessionId'),
+                  subtitle: Text(firstMessage),
+                  onTap: () async {
+                    final messages = await _fetchSessionMessages(sessionId);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatPage(
+                          token: widget.token,
+                          sessionId: sessionId,
+                          initialChatMessages: messages, // Pass the fetched messages
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ChatPage(
-                      token: widget.token,
-                      initialChatMessages: [], // Start a new empty conversation
-                    ),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-              ),
-              child: Text(
-                'New Conversation',
-                style: TextStyle(fontSize: 18),
-              ),
+              onPressed: _startNewConversation, // Start a new conversation
+              child: const Text('New Conversation'),
             ),
           ),
         ],

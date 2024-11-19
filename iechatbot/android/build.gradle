@@ -1,8 +1,37 @@
+buildscript {
+    repositories {
+        google() // Required for Android Gradle Plugin
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.4.2'  // or try 7.3.0
+        // Add any other classpath dependencies here
+    }
+}
+
 allprojects {
+    repositories {
+        google()  // Required for Android dependencies
+        mavenCentral()
+    }
+}
+
+
+
+
+
+
+
+
+/*allprojects {
     repositories {
         google()
         mavenCentral()
     }
+}
+
+dependencies {
+    classpath 'com.android.tools.build:gradle:7.4.2' // Adjust if necessary
 }
 
 rootProject.buildDir = "../build"
