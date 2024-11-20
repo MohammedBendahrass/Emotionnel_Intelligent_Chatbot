@@ -13,25 +13,41 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
 
+  // Variables for password validation
+  bool _isLongEnough = false;
+  bool _hasUppercase = false;
+  bool _hasLowercase = false;
+  bool _hasNumber = false;
+  bool _hasSymbol = false;
+
+  // Validate password and update state
+  void _validatePassword(String password) {
+    setState(() {
+      _isLongEnough = password.length >= 12;
+      _hasUppercase = password.contains(RegExp(r'[A-Z]'));
+      _hasLowercase = password.contains(RegExp(r'[a-z]'));
+      _hasNumber = password.contains(RegExp(r'[0-9]'));
+      _hasSymbol = password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
+    });
+  }
+
   // Function to handle registration
   Future<void> _register() async {
+    final username = _usernameController.text;
+    final email = _emailController.text;
+    final password = _passwordController.text;
+
+    // Check if password is strong enough
+    if (!_isLongEnough || !_hasUppercase || !_hasLowercase || !_hasNumber || !_hasSymbol) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please provide a stronger password.')),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
-
-    final username = _usernameController.text.trim();
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (username.isEmpty || email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields.')),
-      );
-      setState(() {
-        _isLoading = false;
-      });
-      return;
-    }
 
     final response = await http.post(
       Uri.parse('http://127.0.0.1:8000/auth/register'),
@@ -48,7 +64,7 @@ class _RegisterPageState extends State<RegisterPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(responseData['message'])),
       );
-      Navigator.pop(context);
+      Navigator.pop(context); // Navigate back to login page
     } else {
       final errorData = json.decode(response.body);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -66,7 +82,7 @@ class _RegisterPageState extends State<RegisterPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // Background color or gradient
+          // Background gradient
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -82,19 +98,19 @@ class _RegisterPageState extends State<RegisterPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Chatbot Icon
+                  // App Icon
                   Container(
                     height: 120,
                     width: 120,
                     decoration: const BoxDecoration(
                       image: DecorationImage(
-                        image: AssetImage('assets/register_background.png'), // Replace with the actual path
+                        image: AssetImage('assets/register_background.png'),
                         fit: BoxFit.contain,
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // "Create an Account" Text
+                  // Title
                   const Text(
                     'Create an Account',
                     style: TextStyle(
@@ -102,7 +118,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
-                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 40),
                   // Username TextField
@@ -140,6 +155,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
+                    onChanged: _validatePassword,
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white.withOpacity(0.8),
@@ -152,25 +168,37 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  // Password strength indicators
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildPasswordRequirement('Minimum 12 characters', _isLongEnough),
+                      _buildPasswordRequirement('At least one uppercase letter', _hasUppercase),
+                      _buildPasswordRequirement('At least one lowercase letter', _hasLowercase),
+                      _buildPasswordRequirement('At least one number', _hasNumber),
+                      _buildPasswordRequirement('At least one symbol (!@#\$%^&*)', _hasSymbol),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
                   // Register Button
                   ElevatedButton(
                     onPressed: _isLoading ? null : _register,
                     style: ElevatedButton.styleFrom(
+                      // backgroundColor: Colors.blue[700],
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      //backgroundColor: const Color(0xFF4B79A1), // Button color
                     ),
                     child: _isLoading
                         ? const CircularProgressIndicator(color: Colors.white)
                         : const Text('Register'),
                   ),
                   const SizedBox(height: 16),
-                  // Link back to Login Page
+                  // Link to Login Page
                   TextButton(
                     onPressed: () {
-                      Navigator.pop(context);
+                      Navigator.pop(context); // Go back to login page
                     },
                     child: const Text(
                       'Already have an account? Login',
@@ -183,6 +211,26 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         ],
       ),
+    );
+  }
+
+  // Build password requirement row
+  Widget _buildPasswordRequirement(String requirement, bool isValid) {
+    return Row(
+      children: [
+        Icon(
+          isValid ? Icons.check_circle : Icons.cancel,
+          color: isValid ? Colors.green : Colors.red,
+          size: 20,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          requirement,
+          style: TextStyle(
+            color: isValid ? Colors.green : Colors.red,
+          ),
+        ),
+      ],
     );
   }
 }
